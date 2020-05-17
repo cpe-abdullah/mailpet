@@ -44,7 +44,7 @@ $fresh_cache = FALSE;
 $args_list = array_slice($argv, 1, count($argv) - 1);
 
 if(count($args_list) <= 0) {
-	usage(); // To be added
+	usage();
 	exit;
 }
 
@@ -63,7 +63,7 @@ for($j = 0; $j < count($args_list); $j++) {
 					$fresh_cache = TRUE;
 					break;
 				case '-help':
-					usage(); // To be added
+					usage();
 					exit;
 				
 				default:
@@ -249,5 +249,296 @@ catch (Error $e) {
 }
 
 // Done parsing input
+
+// OK, Now we can initiate our PHPMailer
+
+$smtp = new PHPMailer\PHPMailer\SMTP();
+
+if($verbose_output) {
+	$smtp->setDebugOutput('log_debuglog');
+	$smtp->setDebugLevel(PHPMailer\PHPMailer\SMTP::DEBUG_CONNECTION);
+}
+
+$smtp->setVerp(false);
+
+// PHPMailer initiation completed
+
+
+// Determine SMTP host
+
+/* 
+	If no host was provided by the user, use the host in From field to determine SMTP host(s).
+	In case host is provided without port, try forming port combinations.
+	If user provided a host and port use them only, and try forming secure combinations.
+*/
+
+$smtp_host = NULL;
+
+// Ways to determine SMTP host:
+//	1- Local Cache Formed By Previous Net-based Attempts
+// 	2- ISP
+//	3- OnlineDB
+//	4- MX & OnlineDB
+//	5- MX
+//	6- Guessing smtp. mail.
+
+$cache_file_path = realpath($_SERVER['HOME']) . "/" . DEFAULT_CACHE_FILE_NAME;
+
+$cache_content = NULL;
+
+$cache_outofdate = FALSE;
+
+if (!$fresh_cache && file_exists($cache_file_path)) {
+	// Get cache data already stored
+	$cache_data = file_get_contents($cache_file_path);
+
+	if($cache_data === FALSE) {
+		log_debuglog("Error reading contents of cache file: " . $cache_file_path . ", Possible reasons: it not accessible for reading", LOG_WARNING);
+	}
+	else {
+		$cache_content = json_decode($cache_data, TRUE);
+
+		// Parse cache contents for host
+
+		if($cache_content && $cache_content != NULL) {
+
+			$smtp_hosts = $cache_content['smtp_hosts'];
+
+			foreach ($smtp_hosts as $host_entry) {
+				if($host_entry['domain'] === $host) {
+
+					// Cache expiry date set to 14 days
+					if(time() - $host_entry['last_checked'] > 60 * 60 * 24 * 14)
+						$cache_outofdate = TRUE;
+					else
+						$smtp_host = array($host_entry);
+
+					break;
+				}
+			}
+		}
+	}
+}
+
+if($smtp_host == NULL) {
+
+	if($user_host === '' && $user_port == NULL) {
+
+		/*
+			Most of the credit for this section goes to the guys at comm-central project (Mozilla Thunderbird)
+			The entire host determination logic was inspired by the way they handle finding a certain hostname's
+			config combinded with my cute little mods of course, keep hitting the spot boys...
+		*/
+
+		$smtp_hosts_data = array();
+
+		// ISP-BASED SMTP HOST DETERMINATION LOGIC (speed depends on connection)
+		$isp_pool = new XMLTaskPool();
+		$isp_pool->add_task_byurl("https://autoconfig.{$host}/mail/config-v1.1.xml");
+		$isp_pool->add_task_byurl("https://{$host}/.well-known/autoconfig/mail/config-v1.1.xml");
+		$isp_pool->start();
+		$smtp_hosts_data = array_merge($smtp_hosts_data, $isp_pool->get_smtp_hosts_info());
+		$isp_pool->close();
+
+		// MX/DB-BASED SMTP HOST DETERMINATION LOGIC (speed depends on connection)
+		$mx_db_pool = new XMLTaskPool();
+
+		// DB
+		$mx_db_pool->add_task_byurl("https://live.thunderbird.net/autoconfig/v1.1/{$host}");
+		$mx_db_pool->add_task_byurl("https://autoconfig.thunderbird.net/v1.1/{$host}");
+
+		$mxhosts = array();
+
+		dns_get_mx($host, $mxhosts);
+
+		for ($i=0; $i < count($mxhosts); $i++) {
+			// MX/DB
+			$mx_db_pool->add_task_byurl("https://live.thunderbird.net/autoconfig/v1.1/{$mxhosts[$i]}");
+			$mx_db_pool->add_task_byurl("https://autoconfig.thunderbird.net/v1.1/{$mxhosts[$i]}");
+		}
+
+		$mx_db_pool->start();
+		$smtp_hosts_data = array_merge($smtp_hosts_data, $mx_db_pool->get_smtp_hosts_info());
+		$mx_db_pool->close();
+
+		if(count($smtp_hosts_data) == 0) {
+
+			// MX-BASED SMTP HOST GUESS LOGIC (takes longer time)
+			for ($i=0; $i < count($mxhosts); $i++) {
+				foreach ($smtp_ports as $port) {
+					foreach ($smtp_secure_protocols as $protocol) {
+						$host_entry = array(
+							"host" => $mxhosts[$i],
+							"port" => $port,
+							"socketType" => $protocol
+						);
+
+						// Determine host configuration connectivity
+						if($smtp->connect(get_schemed_host($host_entry), $host_entry['port'], SMTP_CONNECTION_TIMEOUT)) {
+
+							if(!in_array($host_entry, $smtp_hosts_data))
+								array_push($smtp_hosts_data, $host_entry);
+
+							$smtp->quit();
+							$smtp->close();
+						}
+					}
+				}
+			}
+		}
+
+		$smtp_host = $smtp_hosts_data;
+	}
+	else if($user_host !== '' && $user_port == NULL) {
+
+		// Depend on user-provided host, with port and secure protocol discovery (takes a while)
+
+		$smtp_hosts_data = array();
+
+		foreach ($smtp_ports as $port) {
+			foreach ($smtp_secure_protocols as $protocol) {
+				$host_entry = array(
+					"host" => $user_host,
+					"port" => $port,
+					"socketType" => $protocol
+				);
+
+				// Determine host configuration connectivity
+				if($smtp->connect(get_schemed_host($host_entry), $host_entry['port'], SMTP_CONNECTION_TIMEOUT)) {
+
+					if(!in_array($host_entry, $smtp_hosts_data))
+						array_push($smtp_hosts_data, $host_entry);
+
+					$smtp->quit();
+					$smtp->close();
+				}
+			}
+		}
+
+		$smtp_host = $smtp_hosts_data;
+	}
+	else {
+
+		// Depend on user-provided host/port, with secure protocol discovery only (takes short time)
+
+		$smtp_hosts_data = array();
+
+		foreach($smtp_secure_protocols as $protocol) {
+			$host_entry = array(
+				"host" => $user_host,
+				"port" => $user_port,
+				"socketType" => $protocol
+			);
+
+			// Determine host configuration connectivity
+			if($smtp->connect(get_schemed_host($host_entry), $host_entry['port'], SMTP_CONNECTION_TIMEOUT)) {
+
+				if(!in_array($host_entry, $smtp_hosts_data))
+					array_push($smtp_hosts_data, $host_entry);
+
+				$smtp->quit();
+				$smtp->close();
+			}
+		}
+
+		$smtp_host = $smtp_hosts_data;
+	}
+}
+
+
+// Initiate SMTP sequence
+
+$msg_sent = false;
+
+$last_check_time = NULL;
+
+for ($i=0; $i < count($smtp_host); $i++) {
+
+	$check_time_start = time();
+
+	$invocation_list = array();
+	array_push($invocation_list, array('connect' => array(get_schemed_host($smtp_host[$i]), $smtp_host[$i]['port'])));
+	array_push($invocation_list, array('hello' => array($smtp_host[$i]['host'])));
+
+	if($smtp_host[$i]['socketType'] === 'STARTTLS') {
+		array_push($invocation_list, array('startTLS' => array()));
+		array_push($invocation_list, array('hello' => array($smtp_host[$i]['host'])));
+	}
+
+	if(!$no_auth)
+		// Authentication type is left for PHPMailer to decide (usually LOGIN depending on server capabilities)
+		array_push($invocation_list, array('authenticate' => array($username, $password, NULL)));
+
+	array_push($invocation_list, array('mail' => array($from)));
+	array_push($invocation_list, array('recipient' => array($to)));
+	array_push($invocation_list, array('data' => array($user_input)));
+
+	// Now we are all set, let's start SMTP sequence
+
+	if(!methods_invoke_assert($smtp, $invocation_list)) {
+		$smtp->close();
+		continue;
+	}
+	else {
+		$smtp->quit();
+		$smtp->close();
+
+		// In case of success, let's keep the current working configuration for later use to avoid time spent during configuration lookup
+
+		$smtp_host[$i]["domain"] = $host;
+		$smtp_host[$i]["last_checked"] = $check_time_start;
+
+		$smtp_host_set = FALSE;
+
+		if($cache_content && $cache_content != NULL) {
+
+			// This is the general case scenario when cache contents are already available
+
+			if(!array_key_exists('smtp_hosts', $cache_content))
+				$cache_content["smtp_hosts"] = array();
+
+			if($cache_outofdate || $fresh_cache) {
+				for ($j = 0; $j < count($cache_content["smtp_hosts"]); $j++) {
+					if($cache_content["smtp_hosts"][$j]["host"] === $smtp_host[$i]["host"]) {
+						$cache_content["smtp_hosts"][$j] = $smtp_host[$i];
+						$smtp_host_set = TRUE;
+
+						break;
+					}
+				}
+
+				if(!$smtp_host_set) {
+					array_push($cache_content["smtp_hosts"], $smtp_host[$i]);
+					$smtp_host_set = TRUE;
+				}
+			}
+		}
+		else {
+			// This is the startup case scenario when cache contents are not available
+
+			$cache_content = array();
+
+			$cache_content["smtp_hosts"] = array($smtp_host[$i]);
+			$smtp_host_set = TRUE;
+		}
+
+		if($smtp_host_set) {
+			if(FALSE === file_put_contents($cache_file_path, json_encode($cache_content)))
+				log_debuglog("Error writing data to cache file: " . $cache_file_path . ", Possible reasons: directory it not accessible for writing", LOG_WARNING);
+		}
+
+		$msg_sent = TRUE;
+		break;
+	}
+}
+
+// SMTP sequence completed
+
+if($msg_sent) {
+	exit("Message sent successfully\n");
+}
+else {
+	exit("Couldn't send message, check logs for more details\n");
+}
 
 ?>
