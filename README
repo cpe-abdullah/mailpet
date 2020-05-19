@@ -1,0 +1,86 @@
+MailPet
+-------
+
+It's a cute little application script aimed at providing an advanced yet flexible CLI-based interface to PHPMailer email sending library, for sending emails using PHPMailer's implementation of SMTP protocol.
+
+It doesn't just provide an implementation of the PHPMailer library, but also enhancements for SMTP configuration discovery along side other features with the hope of making email sending a more pleasant, pet-like experience for CLI pioneers.
+
+Currently the only supported authentication methods are the ones relying on username/password credentials such as: LOGIN/PLAIN, this could be unpleasant for OAUTH users.
+
+Also, no support is provided for MS-Exchange Auto-discovery facilities.
+
+We are planning to cover more authentication methods as well as adding more support for other configuration discovery settings.
+
+
+Requirements
+------------
+
+MailPet is written using PHP programming language, therefore it requires certain set of requirements to be fullfiled prior to its use.
+
+- Operating System
+Any Unix-based operating system should be capable of running MailPet, as long as it has support to install and run PHP or any of its components.
+
+- PHP 5,7
+The following extensions/packages need to be installed and enabled:
+* php-cli
+* mailparse (already built with PHP)
+* php-imap (optional, or if mailparse is not available)
+* pcntl (already built with PHP)
+* php-curl
+* php-xml
+
+- Composer (latest)
+Installer script offers the capability to install Composer, yet you may also install it by following instructions at: https://getcomposer.org/download/
+
+
+Installation
+------------
+
+NOTE: All commands in this section are presumed to work on Debian-based distros such as Ubuntu. For RedHat-based distros, please refer to their corresponding documentation.
+
+Clone the repository to a suitable location (user home for example) using:
+$ git clone https://bitbucket.org/cpe_abdullah/mailpet.git
+OR
+$ git clone https://github.com/cpe-abdullah/mailpet.git
+
+$ cd <to-application-directory>
+
+
+Using the Installer script:
+$ chmod +x install.sh
+$ ./install.sh
+
+
+OR Manually without Installer using:
+$ apt-get install php php-cli php-imap php-curl php-xml
+$ composer.phar install
+
+to run manually use:
+$ php mailpet.php [options]
+
+
+Usage
+-----
+
+mailpet [options]
+
+Options
+-u <username> :			username to authenticate with to the SMTP server
+						(This is mandatory)
+
+-p <password> :			password to authenticate with to the SMTP server
+
+-h <host> :				an already known SMTP host to connect to in order to send email
+						(If not specified MailPet will first check its cache then it will rely on configuration discovery techniques)
+
+-r <port> :				an already known SMTP port to use when connecting to SMTP host
+						(If host is provided without port, MailPet will use port discovery techniques)
+
+-f <path-to-file> :		location of a file to read email message data from instead of standard input
+
+-v :					verbose output
+
+-rc :					refresh mailpet cache
+						(Will delete cache data for the current domain)
+
+-help :					show usage message and exit

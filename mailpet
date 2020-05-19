@@ -1,0 +1,11 @@
+#!/bin/bash
+
+hash php
+
+if [ $? != "0" ]
+then
+	echo "PHP doesn't seem to be available or is not properly installed, make sure PHP is installed then try again"
+	exit 1
+fi
+
+php PWD/mailpet.php $@

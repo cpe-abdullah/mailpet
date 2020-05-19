@@ -45,7 +45,7 @@ $args_list = array_slice($argv, 1, count($argv) - 1);
 
 if(count($args_list) <= 0) {
 	usage();
-	exit;
+	exit(0);
 }
 
 for($j = 0; $j < count($args_list); $j++) {
@@ -64,7 +64,7 @@ for($j = 0; $j < count($args_list); $j++) {
 					break;
 				case '-help':
 					usage();
-					exit;
+					exit(0);
 				
 				default:
 					break;
@@ -102,23 +102,31 @@ for($j = 0; $j < count($args_list); $j++) {
 		}
 		else {
 			log_syslog(LOG_ERR, "Value expected for option " . $args_list[$j - 1]);
-			exit("Error: value expected for option " . $args_list[$j - 1] . ", instead an argument was provided\n");
+
+			echo "Error: value expected for option " . $args_list[$j - 1] . ", instead an argument was provided\n";
+			exit(14);
 		}
 	}
 	else {
 		log_syslog(LOG_ERR, "Unknown argument \"" . $args_list[$j] . "\"");
-		exit("Error: unknown argument \"" . $args_list[$j] . "\"\n");
+
+		echo "Error: unknown argument \"" . $args_list[$j] . "\"\n";
+		exit(13);
 	}
 }
 
 if($password !== '' && $username === '') {
 	log_syslog(LOG_ERR, 'Password is provided without a username');
-	exit("Error: Password is provided without a username, use -u option to specify a username\n");
+
+	echo "Error: Password is provided without a username, use -u option to specify a username\n";
+	exit(11);
 }
 
 if($user_port != NULL && $user_host === '') {
 	log_syslog(LOG_ERR, 'Port is provided without SMTP host');
-	exit("Error: Port is provided without SMTP host, use -h option to specify SMTP host\n");
+
+	echo "Error: Port is provided without SMTP host, use -h option to specify SMTP host\n";
+	exit(12);
 }
 
 if($password === '' && $username === '')
@@ -138,8 +146,10 @@ foreach ($requirements as $function => $extension) {
 
 if(count($extensions)) {
 	log_syslog(LOG_CRIT, "Required extensions (" . implode(', ', $extensions) . ") aren't available");
-	exit( "Required extensions aren't available\n"
-		. "Please make sure the following extensions are properly installed and enabled: " . implode(', ', $extensions) . "\n");
+
+	echo "Required extensions aren't available\n"
+		. "Please make sure the following extensions are properly installed and enabled: " . implode(', ', $extensions) . "\n";
+	exit(20);
 }
 
 // Parallel Library Requirements Pre-Check
@@ -147,8 +157,10 @@ $parallel = new Parallel();
 
 if(!$parallel->isSupported()) {
 	log_syslog(LOG_CRIT, "Required PHP components (pcntl) aren't available");
-	exit( "Required PHP components aren't available\n"
-		. "Please make sure the following components are available and enabled: pcntl\n");
+
+	echo "Required PHP components aren't available\n"
+		. "Please make sure the following components are available and enabled: pcntl\n";
+	exit(21);
 }
 
 // End of Requirements Pre-Check
@@ -163,7 +175,9 @@ if($input_file !== '' && file_exists($input_file)) {
 
 	if($user_input === FALSE) {
 		log_syslog("Error reading contents of input file: " . $input_file);
-		exit("Error reading contents of input file: " . $input_file . "\nMake sure it's accessible for reading\n");
+
+		echo "Error reading contents of input file: " . $input_file . "\nMake sure it's accessible for reading\n";
+		exit(31);
 	}
 }
 // Or pend for user input through standard input stream
@@ -178,8 +192,10 @@ else {
 $user_input = trim($user_input);
 
 //Or may be there is no input available at the moment
-if($user_input === '')
-	exit("No valid input is available, quitting now\n");
+if($user_input === '') {
+	echo "No valid input is available, quitting now\n";
+	exit(30);
+}
 
 // Done reading input
 
@@ -197,7 +213,9 @@ try {
 
 	if(!mailparse_msg_parse($mime_data, $user_input)) {
 		log_debuglog("Bad input, possible malformed or incomplete mime format", LOG_ERR);
-		exit("Bad input, possible malformed or incomplete mime format\nCheck your inputs please\n");
+
+		echo "Bad input, possible malformed or incomplete mime format\nCheck your inputs please\n";
+		exit(40);
 	}
 
 	$mime_greps = mailparse_msg_get_part_data($mime_data);
@@ -206,7 +224,9 @@ try {
 	foreach (array('to', 'from') as $header) {
 		if(!array_key_exists($header, $mime_greps['headers'])) {
 			log_debuglog("Bad input, possible malformed or incomplete mime header format", LOG_ERR);
-			exit("Bad input, possible malformed or incomplete mime header format\nCheck your inputs please\n");
+
+			echo "Bad input, possible malformed or incomplete mime header format\nCheck your inputs please\n";
+			exit(42);
 		}
 	}
 
@@ -230,7 +250,9 @@ catch (Error $e) {
 		foreach (array('toaddress', 'fromaddress', 'from') as $property) {
 			if(!array_key_exists($property, $headers_properties)) {
 				log_debuglog("Bad input, possible malformed or incomplete mime (RFC822) format", LOG_ERR);
-				exit("Bad input, possible malformed or incomplete mime (RFC822) format\nCheck your inputs please\n");
+
+				echo "Bad input, possible malformed or incomplete mime (RFC822) format\nCheck your inputs please\n";
+				exit(43);
 			}
 		}
 
@@ -243,8 +265,10 @@ catch (Error $e) {
 	}
 	else {
 		log_syslog(LOG_CRIT, "Required extentions mailparse/imap aren't available");
-		exit( "Required feature(s) aren't available\n"
-			. "Please make sure either of the following extensions is properly installed and enabled: mailparse, imap\n");
+
+		echo "Required feature(s) aren't available\n"
+			. "Please make sure either of the following extensions is properly installed and enabled: mailparse, imap\n";
+		exit(41);
 	}
 }
 
@@ -259,7 +283,7 @@ if($verbose_output) {
 	$smtp->setDebugLevel(PHPMailer\PHPMailer\SMTP::DEBUG_CONNECTION);
 }
 
-$smtp->setVerp(false);
+$smtp->setVerp(FALSE);
 
 // PHPMailer initiation completed
 
@@ -445,10 +469,18 @@ if($smtp_host == NULL) {
 	}
 }
 
+if (count($smtp_host) == 0) {
+	/*
+		This is the rare case when being out of any valid SMTP host configurations for a certain domain after
+		applying any of the methods in the previous section, had the user provided valid inputs of course...
+	*/
+	log_debuglog("Unable to find any working SMTP host configuration(s) for domain: " . $host, LOG_WARNING);
+}
+
 
 // Initiate SMTP sequence
 
-$msg_sent = false;
+$msg_sent = FALSE;
 
 $last_check_time = NULL;
 
@@ -535,10 +567,12 @@ for ($i=0; $i < count($smtp_host); $i++) {
 // SMTP sequence completed
 
 if($msg_sent) {
-	exit("Message sent successfully\n");
+	echo "Message sent successfully\n";
+	exit(0);
 }
 else {
-	exit("Couldn't send message, check logs for more details\n");
+	echo "Couldn't send message, check logs for more details\n";
+	exit(1);
 }
 
 ?>
