@@ -17,6 +17,10 @@ $smtp_secure_protocols = array(
 	'SSL'
 );
 
+$common_mail_server_names = array(
+	'smtp',
+	'mail'
+);
 
 // Requirements
 $requirements = array(
@@ -304,7 +308,7 @@ $smtp_host = NULL;
 //	3- OnlineDB
 //	4- MX & OnlineDB
 //	5- MX
-//	6- Guessing smtp. mail.
+//	6- Guessing using common mail server names (smtp. mail.)
 
 $cache_file_path = realpath($_SERVER['HOME']) . "/" . DEFAULT_CACHE_FILE_NAME;
 
@@ -317,7 +321,7 @@ if (!$fresh_cache && file_exists($cache_file_path)) {
 	$cache_data = file_get_contents($cache_file_path);
 
 	if($cache_data === FALSE) {
-		log_debuglog("Error reading contents of cache file: " . $cache_file_path . ", Possible reasons: it not accessible for reading", LOG_WARNING);
+		log_debuglog("Error reading contents of cache file: " . $cache_file_path . ", Possible reasons: it's not accessible for reading", LOG_WARNING);
 	}
 	else {
 		$cache_content = json_decode($cache_data, TRUE);
@@ -351,10 +355,11 @@ if($smtp_host == NULL) {
 		/*
 			Most of the credit for this section goes to the guys at comm-central project (Mozilla Thunderbird)
 			The entire host determination logic was inspired by the way they handle finding a certain hostname's
-			config combinded with my cute little mods of course, keep hitting the spot boys...
+			config combined with my cute little mods of course, keep hitting the spot boys...
 		*/
 
 		$smtp_hosts_data = array();
+
 
 		// ISP-BASED SMTP HOST DETERMINATION LOGIC (speed depends on connection)
 		$isp_pool = new XMLTaskPool();
@@ -364,8 +369,10 @@ if($smtp_host == NULL) {
 		$smtp_hosts_data = array_merge($smtp_hosts_data, $isp_pool->get_smtp_hosts_info());
 		$isp_pool->close();
 
+		
 		// MX/DB-BASED SMTP HOST DETERMINATION LOGIC (speed depends on connection)
 		$mx_db_pool = new XMLTaskPool();
+
 
 		// DB
 		$mx_db_pool->add_task_byurl("https://live.thunderbird.net/autoconfig/v1.1/{$host}");
@@ -376,6 +383,7 @@ if($smtp_host == NULL) {
 		dns_get_mx($host, $mxhosts);
 
 		for ($i=0; $i < count($mxhosts); $i++) {
+
 			// MX/DB
 			$mx_db_pool->add_task_byurl("https://live.thunderbird.net/autoconfig/v1.1/{$mxhosts[$i]}");
 			$mx_db_pool->add_task_byurl("https://autoconfig.thunderbird.net/v1.1/{$mxhosts[$i]}");
@@ -402,6 +410,33 @@ if($smtp_host == NULL) {
 
 							if(!in_array($host_entry, $smtp_hosts_data))
 								array_push($smtp_hosts_data, $host_entry);
+
+							$smtp->quit();
+							$smtp->close();
+						}
+					}
+				}
+			}
+		}
+
+
+		// SMTP HOST GUESS LOGIC BASED ON COMMON-SERVER-NAMES
+		foreach ($common_mail_server_names as $mail_server_name) {
+			foreach ($smtp_ports as $port) {
+				foreach ($smtp_secure_protocols as $protocol) {
+					$host_entry = array(
+						"host" => $mail_server_name . "." . $host,
+						"port" => $port,
+						"socketType" => $protocol
+					);
+
+					// First a check is performed for results from previous effort(s) to avoid wasting times in connectivity checks
+					if(!in_array($host_entry, $smtp_hosts_data)) {
+
+						// Determine host configuration connectivity
+						if($smtp->connect(get_schemed_host($host_entry), $host_entry['port'], SMTP_CONNECTION_TIMEOUT)) {
+
+							array_push($smtp_hosts_data, $host_entry);
 
 							$smtp->quit();
 							$smtp->close();
@@ -556,7 +591,7 @@ for ($i=0; $i < count($smtp_host); $i++) {
 
 		if($smtp_host_set) {
 			if(FALSE === file_put_contents($cache_file_path, json_encode($cache_content)))
-				log_debuglog("Error writing data to cache file: " . $cache_file_path . ", Possible reasons: directory it not accessible for writing", LOG_WARNING);
+				log_debuglog("Error writing data to cache file: " . $cache_file_path . ", Possible reasons: directory is not accessible for writing", LOG_WARNING);
 		}
 
 		$msg_sent = TRUE;

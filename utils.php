@@ -2,7 +2,7 @@
 
 //Constants
 
-define('APPLICATION_VERSION', '0.1');
+define('APPLICATION_VERSION', '0.1.1');
 
 define('DEFAULT_CACHE_FILE_NAME', '.mailpet');
 define('LOGGING_IDENTITY', 'MailPet');
